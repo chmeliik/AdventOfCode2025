@@ -1,1 +1,6 @@
 input.txt
+
+# Compiled programs, haskell compilation artifacts
+solve
+*.hi
+*.o
