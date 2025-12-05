@@ -15,18 +15,34 @@ parseInput = map parse . splitOn ','
 nDigits :: Int -> Int
 nDigits = length . takeWhile (> 0) . iterate (`div` 10)
 
-part1 :: [(Int, Int)] -> Int
-part1 = sum . map (sum . invalidIds)
-  where
-    invalidIds :: (Int, Int) -> [Int]
-    invalidIds (a, b) = filter isInvalid [a .. b]
+groupDigits :: Int -> Int -> [Int]
+groupDigits len = map (`mod` (10 ^ len)) . takeWhile (> 0) . iterate (`div` (10 ^ len))
 
+allEq :: (Eq a) => [a] -> Bool
+allEq = all (uncurry (==)) . (zip <$> id <*> tail)
+
+consistsOfNEqualGroups :: Int -> Int -> Bool
+consistsOfNEqualGroups n nGroups =
+  let d = nDigits n
+   in d `mod` nGroups == 0 && allEq (groupDigits (d `div` nGroups) n)
+
+invalidIDsInRange :: (Int -> Bool) -> (Int, Int) -> [Int]
+invalidIDsInRange isInvalid (a, b) = filter isInvalid [a .. b]
+
+part1 :: [(Int, Int)] -> Int
+part1 = sum . map (sum . invalidIDsInRange isInvalid)
+  where
     isInvalid :: Int -> Bool
-    isInvalid n =
-      let x = 10 ^ (nDigits n `div` 2)
-       in div n x == mod n x
+    isInvalid = (`consistsOfNEqualGroups` 2)
+
+part2 :: [(Int, Int)] -> Int
+part2 = sum . map (sum . invalidIDsInRange isInvalid)
+  where
+    isInvalid :: Int -> Bool
+    isInvalid n = any (n `consistsOfNEqualGroups`) [2 .. (nDigits n)]
 
 main :: IO ()
 main = do
   input <- parseInput <$> readFile "input.txt"
   print $ part1 input
+  print $ part2 input
