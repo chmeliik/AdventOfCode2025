@@ -1,31 +1,66 @@
 module Main (main) where
 
-import Data.IntSet qualified as S
-import Data.List (elemIndex, elemIndices, foldl')
+import Control.Monad.State (State, evalState, gets, modify)
+import Data.List (elemIndex, elemIndices)
+import Data.Map qualified as M
 import Data.Maybe (fromJust)
+import Data.Set qualified as S
 
-parseInput :: String -> (Int, [S.IntSet])
-parseInput s = (startPos, map S.fromList splitters)
+parseInput :: String -> ((Int, Int), S.Set (Int, Int))
+parseInput s = (startPos, splitters)
   where
-    startPos = fromJust $ elemIndex 'S' (head $ lines s)
-    splitters = map (elemIndices '^') (filterIndex odd $ tail $ lines s)
+    startPos = (0, fromJust $ elemIndex 'S' (head $ lines s))
+    splitters =
+      S.fromList
+        [ (i + 1, j)
+          | (i, line) <- zip [0 ..] (filterIndex odd $ tail $ lines s),
+            j <- elemIndices '^' line
+        ]
 
-filterIndex :: (Int -> Bool) -> [a] -> [a]
-filterIndex p xs = map snd $ filter (p . fst) $ zip [0 ..] xs
+    filterIndex :: (Int -> Bool) -> [a] -> [a]
+    filterIndex p xs = map snd $ filter (p . fst) $ zip [0 ..] xs
 
-part1 :: (Int, [S.IntSet]) -> Int
-part1 (startPos, splitters) = numSplits
+type Cached i o = State (M.Map i o) o
+
+withCached :: (Ord i) => i -> (i -> Cached i o) -> Cached i o
+withCached i f = do
+  cached <- gets (M.lookup i)
+  case cached of
+    Just o -> pure o
+    Nothing -> do
+      o <- f i
+      modify (M.insert i o)
+      pure o
+
+runCached :: Cached i o -> o
+runCached = (`evalState` M.empty)
+
+countSplitterHits :: (Int, Int) -> S.Set (Int, Int) -> M.Map (Int, Int) Int
+countSplitterHits startPos splitters = runCached (splittersHit startPos)
   where
-    (numSplits, _) = foldl' go (0, S.singleton startPos) splitters
+    lastPos = S.findMax splitters
 
-    go :: (Int, S.IntSet) -> S.IntSet -> (Int, S.IntSet)
-    go (nSplits, beams) splittersOnThisRow =
-      (nSplits + S.size hits, S.union misses splitBeams)
-      where
-        (hits, misses) = S.partition (`S.member` splittersOnThisRow) beams
-        splitBeams = S.fromList $ concatMap (\n -> [n - 1, n + 1]) $ S.elems hits
+    splittersHit :: (Int, Int) -> Cached (Int, Int) (M.Map (Int, Int) Int)
+    splittersHit pos
+      | pos > lastPos = pure M.empty
+      | otherwise = withCached pos $ \(x, y) ->
+          if pos `S.notMember` splitters
+            then splittersHit (x + 1, y)
+            else do
+              splitters <-
+                M.unionWith (+)
+                  <$> splittersHit (x + 1, y - 1)
+                  <*> splittersHit (x + 1, y + 1)
+              pure (M.insert (x, y) 1 splitters)
+
+part1 :: ((Int, Int), S.Set (Int, Int)) -> Int
+part1 = M.size . uncurry countSplitterHits
+
+part2 :: ((Int, Int), S.Set (Int, Int)) -> Int
+part2 = (+ 1) . sum . uncurry countSplitterHits
 
 main :: IO ()
 main = do
   input <- parseInput <$> readFile "input.txt"
   print $ part1 input
+  print $ part2 input
