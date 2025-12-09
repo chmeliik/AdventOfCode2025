@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Data.List (foldl', sort, sortOn)
+import Data.List (foldl', scanl', sort, sortOn)
 import Data.Map qualified as M
 
 type Box = (Float, Float, Float)
@@ -27,27 +27,24 @@ pairsByDistance boxes =
           j > i
       ]
 
-connectCircuits :: [(Box, Box)] -> M.Map Box Int
-connectCircuits = foldl' addPair M.empty
-  where
-    addPair :: M.Map Box Int -> (Box, Box) -> M.Map Box Int
-    addPair circuits (a, b) =
-      let cA = M.lookup a circuits
-          cB = M.lookup b circuits
-       in case (cA, cB) of
-            (Nothing, Nothing) -> add a newID $ add b newID circuits
-            (Just aID, Nothing) -> add b aID circuits
-            (Nothing, Just bID) -> add a bID circuits
-            (Just aID, Just bID) ->
-              M.map
-                (\cID -> if cID == bID then aID else cID)
-                circuits
-      where
-        add = M.insert
-        newID = M.size circuits
+type CircuitID = Int
 
-circuitSizes :: M.Map Box Int -> M.Map Int Int
-circuitSizes = M.fromListWith (+) . map (,1) . M.elems
+addPair :: (Int, M.Map Box CircuitID) -> (Box, Box) -> (Int, M.Map Box CircuitID)
+addPair (nc, circuits) (a, b) =
+  let cA = M.lookup a circuits
+      cB = M.lookup b circuits
+      add = M.insert
+      newID = M.size circuits
+   in case (cA, cB) of
+        (Nothing, Nothing) -> (nc + 1, add a newID $ add b newID circuits)
+        (Just aID, Nothing) -> (nc, add b aID circuits)
+        (Nothing, Just bID) -> (nc, add a bID circuits)
+        (Just aID, Just bID)
+          | aID == bID -> (nc, circuits)
+          | otherwise ->
+              ( nc - 1,
+                M.map (\cID -> if cID == bID then aID else cID) circuits
+              )
 
 part1 :: [Box] -> Int
 part1 =
@@ -59,8 +56,31 @@ part1 =
     . connectCircuits
     . take 1000
     . pairsByDistance
+  where
+    connectCircuits :: [(Box, Box)] -> M.Map Box CircuitID
+    connectCircuits = snd . foldl' addPair (0, M.empty)
+
+    circuitSizes :: M.Map Box CircuitID -> M.Map CircuitID Int
+    circuitSizes = M.fromListWith (+) . map (,1) . M.elems
+
+part2 :: [Box] -> Int
+part2 boxes = truncate x1 * truncate x2
+  where
+    scanCircuits :: [(Box, Box)] -> [(Int, M.Map Box CircuitID)]
+    scanCircuits = scanl' addPair (0, M.empty)
+
+    pairs = pairsByDistance boxes
+
+    stepsToConnectAll =
+      length $
+        takeWhile
+          (\(nc, circuits) -> nc /= 1 || M.size circuits /= length boxes)
+          (scanCircuits pairs)
+
+    ((x1, _, _), (x2, _, _)) = pairs !! (stepsToConnectAll -1)
 
 main :: IO ()
 main = do
   input <- parseInput <$> readFile "input.txt"
   print $ part1 input
+  print $ part2 input
